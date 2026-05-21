@@ -5,7 +5,7 @@ hide:
   - navigation
 ---
 
-# AFM Specification v0.3.0
+# AFM Specification v0.4.0 (draft)
 
 ## 1. Introduction
 
@@ -93,7 +93,7 @@ The Markdown body **MUST** contain the following headings, with corresponding co
 
     ```yaml
     ---
-    spec_version: "0.3.0"
+    spec_version: "0.4.0"
     name: "Math Tutor"
     description: "An AI assistant that helps with math problems"
     version: "1.0.0"
@@ -145,7 +145,7 @@ AFM implementations **SHALL** use this section to display the agent's metadata i
 The agent metadata fields are specified in the YAML front matter of an AFM file:
 
 ```yaml
-spec_version: string   # AFM specification version (e.g., "0.3.0")
+spec_version: string   # AFM specification version (e.g., "0.4.0")
 name: string           # The name of the agent
 description: string    # Brief description of the agent's purpose and functionality
 version: string        # Semantic version (e.g., "1.0.0")
@@ -165,7 +165,7 @@ Each field serves a specific purpose in defining and organizing the agent:
 
 | Key | Type | Required | Description |
 | ------- | ------ | ---------- | ------------- |
-| `spec_version` | `string` | No | Version of the AFM specification this file conforms to (e.g., "0.3.0").<br>This is **OPTIONAL** but recommended for compatibility.<br>AFM implementations **MAY** use this field to validate compatibility and provide warnings for mismatched spec versions. |
+| `spec_version` | `string` | No | Version of the AFM specification this file conforms to (e.g., "0.4.0").<br>This is **OPTIONAL** but recommended for compatibility.<br>AFM implementations **MAY** use this field to validate compatibility and provide warnings for mismatched spec versions. |
 | `name` | `string` | No | Identifies the agent in human-readable form.<br>Default: inferred from the filename of the AFM file.<br>AFM implementations **SHALL** use this field to display the agent's name in user interfaces. |
 | `description` | `string` | No | Provides a concise summary of what the agent does.<br>Default: inferred from the markdown body `# Role` section.<br>AFM implementations **SHALL** use this field to display the agent's description in user interfaces. |
 | `version` | `string` | No | [Semantic version](https://semver.org/) of the agent definition (MAJOR.MINOR.PATCH).<br>Default: "0.0.0".<br>AFM implementations **SHALL** use this field to display the agent's version in user interfaces. |
@@ -188,7 +188,7 @@ The following example demonstrates a valid agent metadata section as specified i
 
 ```yaml
 ---
-spec_version: "0.3.0"
+spec_version: "0.4.0"
 name: "Math Tutor"
 description: "An AI assistant that helps with math problems"
 version: "1.2.0"
@@ -908,3 +908,7 @@ This section outlines potential future enhancements to the AFM specification, in
 - Support for Agent Identity
 - Support for additional interface types (e.g., scheduled execution, REST API)
 - Support for remote Agent Skills from URLs and skill registries
+
+---
+
+*Released versions of the AFM specification are available on [GitHub](https://github.com/wso2/agent-flavored-markdown/releases).*
