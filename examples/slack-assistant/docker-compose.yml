@@ -1,0 +1,20 @@
+services:
+  agent:
+    image: ghcr.io/wso2/afm-langchain-interpreter:latest
+    command: run /app/slack_assistant.afm.md
+    volumes:
+      - ./slack_assistant.afm.md:/app/slack_assistant.afm.md
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_USER_TOKEN=${SLACK_USER_TOKEN}
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    command: http agent:8085
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    ports:
+      - "4040:4040"
+    depends_on:
+      - agent
