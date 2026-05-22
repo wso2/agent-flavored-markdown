@@ -412,7 +412,7 @@ All three variants share the following common fields:
 
 **Platformchat (`mode: notification`):**
 
-The platform pushes events over HTTP; the runtime acknowledges the request and any user-visible reply happens out-of-band. The agent has no platform-response channel, so `signature.output` is not permitted: implementations **MUST** reject definitions that set `signature.output` in this mode.
+The platform pushes events over HTTP; the runtime acknowledges the request and any user-visible reply happens out-of-band. The agent has no platform-response channel in this mode. `signature.output` **MUST NOT** be set, and implementations **MUST** reject definitions that include it.
 
 | Key | Type | Required | Description |
 | --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
@@ -430,7 +430,7 @@ The platform pushes events over HTTP and expects the agent's result in the immed
 
 **Platformchat (`mode: polling`):**
 
-The runtime initiates outbound HTTP calls to the platform on an interval and invokes the agent for each new event. There is no inbound HTTP endpoint to expose, and the agent has no platform-response channel, so `signature.output` is not permitted: implementations **MUST** reject definitions that set `signature.output` in this mode.
+The runtime initiates outbound HTTP calls to the platform on an interval and invokes the agent for each new event. There is no inbound HTTP endpoint and no platform-response channel in this mode. `exposure` and `signature.output` **MUST NOT** be set, and implementations **MUST** reject definitions that include either.
 
 | Key | Type | Required | Description |
 | --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
@@ -517,7 +517,7 @@ Default signature behavior:
 
 - For `webhook` type: the `input` field MAY be omitted, as the webhook provider determines the incoming payload structure. There is no synchronous-response channel, so `output` MAY be omitted as well.
 
-- For `platformchat` type: the `input` field MAY be omitted, as the platform determines the incoming payload structure. The `output` field applies only to `mode: request` (where it describes the synchronous response returned to the platform); for `mode: notification` and `mode: polling`, `output` **MUST NOT** be set and implementations **MUST** reject definitions that do. See the per-mode tables under the Platformchat Interface.
+- For `platformchat` type: the `input` field MAY be omitted; the platform determines the incoming payload structure. The `output` field applies only to `mode: request`, where it describes the synchronous response returned to the platform. For `mode: notification` and `mode: polling`, `output` **MUST NOT** be set, and implementations **MUST** reject definitions that include it. See the per-mode tables under the Platformchat Interface.
 
 AFM implementations **SHALL** use this definition to generate the agent's callable interface and to ensure consistent behavior across different platforms.
 
@@ -560,7 +560,7 @@ Applies to agents of type `webchat`, `webhook`, and `platformchat` (with `mode: 
 !!! note "HTTP Exposure Configuration"
     The `http` object is applicable for agents of type `webchat`, `webhook`, or `platformchat` (in `notification` and `request` modes). It defines how the agent is exposed via a standard HTTP endpoint, allowing other systems to interact with it over the web.
 
-    `platformchat` interfaces with `mode: polling` are outbound — the runtime fetches events from the platform — and therefore do not use `exposure`.
+    For `platformchat` interfaces with `mode: polling`, the runtime fetches events from the platform; there is no inbound HTTP endpoint. `exposure` **MUST NOT** be set, and implementations **MUST** reject definitions that include it.
 
     **Default Paths:**
 
