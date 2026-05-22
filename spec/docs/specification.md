@@ -291,20 +291,24 @@ interfaces:
 
 A platformchat interface is further discriminated by the `mode` field.
 
+`mode: notification` - platform pushes events; runtime acknowledges, reply (if present) is out-of-band:
+
 ```yaml
-# mode: notification — platform pushes events; runtime acknowledges, reply is out-of-band
 interfaces:
   - type: platformchat                      # REQUIRED
     platform: string                        # REQUIRED — e.g. "gchat", "slack", "telegram"
     mode: notification                      # REQUIRED
     prompt: string                          # Prompt template (supports ${http:payload.*} / ${http:header.*})
-    signature:                              # output has no platform-response semantics in this mode
+    signature:                              # output is not permitted in this mode
       input: object
     platform_config: object                 # Platform-specific configuration
     exposure:
       http: object
+```
 
-# mode: request — platform pushes events and expects the agent result in the HTTP response
+`mode: request` - platform pushes events and expects the agent result in the HTTP response:
+
+```yaml
 interfaces:
   - type: platformchat                      # REQUIRED
     platform: string                        # REQUIRED
@@ -316,14 +320,17 @@ interfaces:
     platform_config: object
     exposure:
       http: object
+```
 
-# mode: polling — runtime fetches events from the platform on an interval
+`mode: polling` - runtime fetches events from the platform:
+
+```yaml
 interfaces:
   - type: platformchat                      # REQUIRED
     platform: string                        # REQUIRED
     mode: polling                           # REQUIRED
     prompt: string
-    signature:                              # output has no platform-response semantics in this mode
+    signature:                              # output is not permitted in this mode
       input: object
     platform_config: object
     polling:                                # If omitted, interval defaults to 30
@@ -405,11 +412,11 @@ All three variants share the following common fields:
 
 **Platformchat (`mode: notification`):**
 
-The platform pushes events over HTTP; the runtime acknowledges the request and any user-visible reply happens out-of-band. The agent has no platform-response channel, so `signature.output` is not applicable.
+The platform pushes events over HTTP; the runtime acknowledges the request and any user-visible reply happens out-of-band. The agent has no platform-response channel, so `signature.output` is not permitted: implementations **MUST** reject definitions that set `signature.output` in this mode.
 
 | Key | Type | Required | Description |
 | --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
-| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the incoming payload structure. See [Signature Object](#signature-object). |
+| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the incoming payload structure. The `output` field **MUST NOT** be set. See [Signature Object](#signature-object). |
 | `exposure` | `object` | No | Configuration for how the agent is exposed via HTTP. See [Exposure Object](#exposure-object). |
 
 **Platformchat (`mode: request`):**
@@ -423,11 +430,11 @@ The platform pushes events over HTTP and expects the agent's result in the immed
 
 **Platformchat (`mode: polling`):**
 
-The runtime initiates outbound HTTP calls to the platform on an interval and invokes the agent for each new event. There is no inbound HTTP endpoint to expose, and the agent has no platform-response channel, so `signature.output` is not applicable.
+The runtime initiates outbound HTTP calls to the platform on an interval and invokes the agent for each new event. There is no inbound HTTP endpoint to expose, and the agent has no platform-response channel, so `signature.output` is not permitted: implementations **MUST** reject definitions that set `signature.output` in this mode.
 
 | Key | Type | Required | Description |
 | --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
-| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the event payload structure. See [Signature Object](#signature-object). |
+| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the event payload structure. The `output` field **MUST NOT** be set. See [Signature Object](#signature-object). |
 | `polling` | `object` | No | Polling configuration. If omitted, spec-defined defaults apply. See [Polling Object](#polling-object). |
 | `authentication` | `object` | No | Client authentication used by the runtime when making outbound calls to the platform. See [Section 5.6](#56-authentication) for the schema. |
 
@@ -510,7 +517,7 @@ Default signature behavior:
 
 - For `webhook` type: the `input` field MAY be omitted, as the webhook provider determines the incoming payload structure. There is no synchronous-response channel, so `output` MAY be omitted as well.
 
-- For `platformchat` type: the `input` field MAY be omitted, as the platform determines the incoming payload structure. The `output` field applies only to `mode: request` (where it describes the synchronous response returned to the platform); for `mode: notification` and `mode: polling`, `output` is not applicable. See the per-mode tables under the Platformchat Interface.
+- For `platformchat` type: the `input` field MAY be omitted, as the platform determines the incoming payload structure. The `output` field applies only to `mode: request` (where it describes the synchronous response returned to the platform); for `mode: notification` and `mode: polling`, `output` **MUST NOT** be set and implementations **MUST** reject definitions that do. See the per-mode tables under the Platformchat Interface.
 
 AFM implementations **SHALL** use this definition to generate the agent's callable interface and to ensure consistent behavior across different platforms.
 
