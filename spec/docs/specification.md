@@ -583,10 +583,17 @@ The authentication object is **OPTIONAL**.
 ```yaml
 authentication:
   type: string         # Authentication scheme (bearer, jwt, oauth2, api-key, basic, etc.)
-  # Additional fields depend on the type
-  # Examples:
-  # - For bearer: token
-  # - For basic: username, password
+
+  # For type: "bearer"
+  token: string                # The security token (usually substituted via environment vars)
+
+  # For type: "basic"
+  username: string             # The username for standard HTTP Basic Access Authentication
+  password: string             # The password associated with the username
+
+  # For type: "api-key"
+  api_key: string              # The plain text static API key value
+
 ```
 
 #### 5.6.2. Field Definitions
@@ -594,9 +601,29 @@ authentication:
 <a id="authentication-object"></a>**Authentication Object:**
 
 | Key | Type | Required | Description |
-| ------ | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type` | `string` | Yes | Authentication scheme (e.g., `bearer`, `basic`, `jwt`, `oauth2`).<br>Determines which additional fields are required or supported. |
-| `*` | Various | Varies | Additional fields are authentication-type specific. See examples below for common patterns.<br>Values **SHOULD** use [variable substitution](#7-variable-substitution) to reference credentials securely. |
+| :--- | :--- | :--- | :--- |
+| `type` | `string` | **Yes** | Authentication scheme (`bearer`, `basic`, `api-key`, `oauth2`). Case-insensitive. Determines which additional type-specific fields are required or supported. |
+
+##### Type-Specific Variant Fields:
+
+**Bearer Token Variant (`type: "bearer"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `token` | `string` | **Yes** | The active token string. Values **SHOULD** use [variable substitution](#7-variable-substitution) to reference credentials securely. |
+
+**Basic Authentication Variant (`type: "basic"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `username` | `string` | **Yes** | The user ID string required for access. |
+| `password` | `string` | **Yes** | The plain text secret paired with the username. |
+
+**API Key Variant (`type: "api-key"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `api_key` | `string` | **Yes** | The platform-specific authentication string. |
 
 <!-- !!! note "Authentication Field Structure"
     The authentication object uses a type-specific structure where the `type` field determines which additional fields are needed:
@@ -626,6 +653,11 @@ authentication:
   type: basic
   username: "${env:API_USERNAME}"
   password: "${env:API_PASSWORD}"
+
+# API key authentication
+authentication:
+  type: "api-key"
+  api_key: "${env:OPENAI_API_KEY}"
 ```
 
 ### 5.7. Agent Skills {#57-agent-skills}
