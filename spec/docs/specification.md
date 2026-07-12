@@ -254,30 +254,109 @@ The `interface.type` field **MUST** be one of the following values:
 | --------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `consolechat` | The agent is exposed as a command-line/terminal chat interface for interactive console-based conversations. |
 | `webchat` | The agent is exposed as a web-based chat interface, accessible through browsers with a conversational UI. |
+| `platformchat` | The agent is exposed as a chat interface on an external messaging or collaboration platform. |
 | `webhook` | The agent is exposed as a webhook endpoint and supports subscription details (e.g., WebSub hub integration). |
 
-Each interface type defines how the agent is triggered and interacted with. Implementations **MAY** support all three types as described above.
+Each interface type defines how the agent is triggered and interacted with. Implementations **MAY** support all four types as described above.
 
 #### 5.3.2. Schema Overview
 
+The `interfaces` field is an array of interface objects. Each interface object is one of four variants, discriminated by the `type` field. The schema for each variant is shown below.
+
+In the schemas below, every field is **OPTIONAL** unless marked **REQUIRED**. Comments call out the few fields whose defaults or semantics differ between variants.
+
+**`type: consolechat`**
+
 ```yaml
 interfaces:
-  - type: consolechat | webchat | webhook
-    prompt: string              # For webhook type: template string for constructing the user prompt for the agent run
-    signature:
-      input: object             # JSON Schema object defining input parameters
-      output: object            # JSON Schema object defining output parameters
-    # Optional, depending on type:
-    exposure:                   # For webchat/webhook types only
-      http: object              # Configuration for exposing as an HTTP endpoint.
-    subscription:               # For webhook type
-      protocol: string          # e.g., "websub"
-      hub: string               # Subscription hub URL
-      topic: string             # Topic to subscribe to
-      callback: string          # Callback URL for receiving events (optional, for dynamic registration)
-      secret: string            # Secret for verifying webhook payloads (optional)
-      authentication: object    # Authentication configuration for the subscription  (optional)
+  - type: consolechat                       # REQUIRED
+    signature:                              # Defaults to string in / string out
+      input: object
+      output: object
+```
 
+**`type: webchat`**
+
+```yaml
+interfaces:
+  - type: webchat                           # REQUIRED
+    signature:                              # Defaults to string in / string out
+      input: object
+      output: object
+    exposure:
+      http: object
+```
+
+**`type: platformchat`**
+
+A platformchat interface is further discriminated by the `mode` field.
+
+`mode: notification` - platform pushes events; runtime acknowledges, reply (if present) is out-of-band:
+
+```yaml
+interfaces:
+  - type: platformchat                      # REQUIRED
+    platform: string                        # REQUIRED — e.g. "gchat", "slack", "telegram"
+    mode: notification                      # REQUIRED
+    prompt: string                          # Prompt template (supports ${http:payload.*} / ${http:header.*})
+    signature:                              # output is not permitted in this mode
+      input: object
+    platform_config: object                 # Platform-specific configuration
+    exposure:
+      http: object
+```
+
+`mode: request` - platform pushes events and expects the agent result in the HTTP response:
+
+```yaml
+interfaces:
+  - type: platformchat                      # REQUIRED
+    platform: string                        # REQUIRED
+    mode: request                           # REQUIRED
+    prompt: string
+    signature:
+      input: object
+      output: object                        # Describes the synchronous response payload returned to the platform
+    platform_config: object
+    exposure:
+      http: object
+```
+
+`mode: polling` - runtime fetches events from the platform:
+
+```yaml
+interfaces:
+  - type: platformchat                      # REQUIRED
+    platform: string                        # REQUIRED
+    mode: polling                           # REQUIRED
+    prompt: string
+    signature:                              # output is not permitted in this mode
+      input: object
+    platform_config: object
+    polling:                                # If omitted, interval defaults to 30
+      interval: integer                     # Poll interval in seconds
+      timeout: integer                      # Per-poll timeout in seconds
+    authentication: object                  # Client authentication for outbound calls to the platform
+```
+
+**`type: webhook`**
+
+```yaml
+interfaces:
+  - type: webhook                           # REQUIRED
+    prompt: string                          # Prompt template (supports ${http:payload.*} / ${http:header.*})
+    signature:                              # Optional. input MAY be omitted (provider determines incoming payload); output has no synchronous-response channel
+      input: object
+      output: object
+    exposure:
+      http: object
+    subscription:
+      protocol: string                      # REQUIRED within subscription — e.g., "websub"
+      hub: string                           # Subscription hub URL
+      topic: string                         # Topic to subscribe to
+      callback: string                      # Callback URL for receiving events
+      secret: string                        # Secret for verifying webhook payloads
+      authentication: object                # Authentication configuration for the subscription
 ```
 
 #### 5.3.3. Field Definitions
@@ -307,15 +386,67 @@ Web-based chat interface accessible through browsers with a conversational UI.
 | `signature` | `object` | No | Defines the agent's input and output parameters. Defaults to string input and string output. See [Signature Object](#signature-object). |
 | `exposure` | `object` | No | Configuration for how the agent is exposed via HTTP. See [Exposure Object](#exposure-object). |
 
+**Platformchat Interface:**
+
+Chat interface hosted by an external messaging or collaboration platform (e.g., Google Chat, Slack, Telegram).
+
+The platformchat interface object **MUST** be one of three variants, discriminated by the `mode` field:
+
+| Mode | Description |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `notification` | The platform sends an event over HTTP, the runtime acknowledges it, and any reply happens out-of-band (e.g., via MCP tools the agent uses to call back into the platform). |
+| `request` | The platform sends an event over HTTP and expects the agent's result in the immediate HTTP response. The shape of that response is described by `signature.output`. |
+| `polling` | The runtime periodically fetches events from the platform and invokes the agent for each new event. Configured via the `polling` field. |
+
+Implementations **MUST** support whichever subset of modes a given platform requires; not every platform supports every mode.
+
+All three variants share the following common fields:
+
+| Key | Type | Required | Description |
+| --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `type` | `string` | Yes | Must be `"platformchat"`. |
+| `platform` | `string` | Yes | Identifier of the external chat platform (e.g., `"gchat"`, `"slack"`, `"telegram"`, `"whatsapp"`). |
+| `mode` | `string` | Yes | Selects the variant. One of `"notification"`, `"request"`, or `"polling"`. |
+| `prompt` | `string` | No | A template string for constructing the user prompt for an agent run from platform-delivered event data.<br>Supports [variable substitution](#7-variable-substitution) with HTTP context prefixes (`${http:payload.fieldname}`, `${http:header.headername}`).<br>When omitted, the implementation determines how to construct the agent prompt from the event payload. |
+| `platform_config` | `object` | No | Platform-specific configuration (e.g., signing secrets, project numbers, allowed update types). The set of recognized keys is determined by the platform and the implementation. |
+
+**Platformchat (`mode: notification`):**
+
+The platform pushes events over HTTP; the runtime acknowledges the request and any user-visible reply happens out-of-band. The agent has no platform-response channel in this mode. `signature.output` **MUST NOT** be set, and implementations **MUST** reject definitions that include it.
+
+| Key | Type | Required | Description |
+| --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the incoming payload structure. The `output` field **MUST NOT** be set. See [Signature Object](#signature-object). |
+| `exposure` | `object` | No | Configuration for how the agent is exposed via HTTP. See [Exposure Object](#exposure-object). |
+
+**Platformchat (`mode: request`):**
+
+The platform pushes events over HTTP and expects the agent's result in the immediate HTTP response.
+
+| Key | Type | Required | Description |
+| --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `signature` | `object` | No | Defines the agent's input and output parameters. The `input` field MAY be omitted as the platform determines the incoming payload structure. The `output` field describes the synchronous response payload returned to the platform. See [Signature Object](#signature-object). |
+| `exposure` | `object` | No | Configuration for how the agent is exposed via HTTP. See [Exposure Object](#exposure-object). |
+
+**Platformchat (`mode: polling`):**
+
+The runtime initiates outbound HTTP calls to the platform on an interval and invokes the agent for each new event. There is no inbound HTTP endpoint and no platform-response channel in this mode. `exposure` and `signature.output` **MUST NOT** be set, and implementations **MUST** reject definitions that include either.
+
+| Key | Type | Required | Description |
+| --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `signature` | `object` | No | Defines the agent's input parameters. The `input` field MAY be omitted as the platform determines the event payload structure. The `output` field **MUST NOT** be set. See [Signature Object](#signature-object). |
+| `polling` | `object` | No | Polling configuration. If omitted, spec-defined defaults apply. See [Polling Object](#polling-object). |
+| `authentication` | `object` | No | Client authentication used by the runtime when making outbound calls to the platform. See [Section 5.6](#56-authentication) for the schema. |
+
 **Webhook Interface:**
 
-Webhook endpoint with subscription support.
+Generic event/callback endpoint with subscription support (e.g., WebSub).
 
 | Key | Type | Required | Description |
 | --------------- | ---------- | ---------- | --------------------------------------------------------------------------------------------------------- |
 | `type` | `string` | Yes | Must be `"webhook"`. |
 | `prompt` | `string` | No | A template string for constructing the user prompt for an agent run from webhook data.<br>Supports [variable substitution](#7-variable-substitution) with HTTP context prefixes:<br>- `${http:payload.fieldname}` to access webhook payload fields<br>- `${http:header.headername}` to access HTTP headers<br>When provided, this templated prompt is used as the user prompt to the agent.<br>When omitted, the implementation determines how to construct the agent prompt from the webhook payload. |
-| `signature` | `object` | No | Defines the agent's output parameters. The `input` field MAY be omitted as the webhook provider determines the input payload structure. See [Signature Object](#signature-object). |
+| `signature` | `object` | No | Defines the agent's input and output parameters. The `input` field MAY be omitted as the webhook provider determines the incoming payload structure. The `output` field has no synchronous-response channel for `webhook` (the runtime acknowledges the request immediately) and MAY be omitted. See [Signature Object](#signature-object). |
 | `exposure` | `object` | No | Configuration for how the agent is exposed via HTTP. See [Exposure Object](#exposure-object). |
 | `subscription` | `object` | No | Subscription configuration. See [Subscription Object](#subscription-object). |
 
@@ -384,7 +515,9 @@ Default signature behavior:
 
 - For `consolechat` and `webchat` types: the default `signature` is string input and string output.
 
-- For `webhook` type: the `input` field MAY be omitted, as the webhook provider determines the input payload structure.
+- For `webhook` type: the `input` field MAY be omitted, as the webhook provider determines the incoming payload structure. There is no synchronous-response channel, so `output` MAY be omitted as well.
+
+- For `platformchat` type: the `input` field MAY be omitted; the platform determines the incoming payload structure. The `output` field applies only to `mode: request`, where it describes the synchronous response returned to the platform. For `mode: notification` and `mode: polling`, `output` **MUST NOT** be set, and implementations **MUST** reject definitions that include it. See the per-mode tables under the Platformchat Interface.
 
 AFM implementations **SHALL** use this definition to generate the agent's callable interface and to ensure consistent behavior across different platforms.
 
@@ -400,9 +533,19 @@ AFM implementations **SHALL** use this definition to generate the agent's callab
 | `authentication` | `object` | No | Optional authentication configuration for the webhook subscription. See [Section 5.6](#56-authentication) for the schema. |
 | `secret` | `string` | No | A secret used to sign or verify webhook payloads (optional, for security). |
 
+<a id="polling-object"></a>
+**Polling Object:**
+
+Applies to `platformchat` interfaces with `mode: polling`. Describes how the runtime fetches events from the platform. The entire `polling` object is **OPTIONAL**; when omitted, the defaults below apply.
+
+| Key | Type | Required | Description |
+| ------------------ | ---------- | ---------- | ------------- |
+| `interval` | `integer` | No | Interval between successive poll requests, in seconds. Default: `30`. |
+| `timeout` | `integer` | No | Per-poll request timeout, in seconds. When omitted, the implementation chooses a sensible default. |
+
 ##### Exposure Object {#exposure-object}
 
-Applies to agents of type `webchat` and `webhook`, and defines how the corresponding services are exposed.
+Applies to agents of type `webchat`, `webhook`, and `platformchat` (with `mode: notification` or `mode: request`), and defines how the corresponding services are exposed.
 
 | Key | Type | Required | Description |
 | -------- | ---------- | ---------- | ---------------------------------------------------------------------- |
@@ -412,15 +555,18 @@ Applies to agents of type `webchat` and `webhook`, and defines how the correspon
 
 | Key | Type | Required | Description |
 | ------------------ | ---------- | ---------- | ----------------------------------------------------------------------------- |
-| `path` | `string` | No | The URL path segment for the agent's HTTP endpoint (e.g., `/math-tutor`). If not specified, implementations **SHOULD** use `/chat` for `webchat` interfaces and `/webhook` for `webhook` interfaces. |
+| `path` | `string` | No | The URL path segment for the agent's HTTP endpoint (e.g., `/math-tutor`). If not specified, implementations **SHOULD** use `/chat` for `webchat` interfaces, `/webhook` for `webhook` interfaces, and `/{platform}` for `platformchat` interfaces (e.g., `/slack`). |
 
 !!! note "HTTP Exposure Configuration"
-    The `http` object is applicable for agents of type `webchat` or `webhook`. It defines how the agent is exposed via a standard HTTP endpoint, allowing other systems to interact with it over the web.
+    The `http` object is applicable for agents of type `webchat`, `webhook`, or `platformchat` (in `notification` and `request` modes). It defines how the agent is exposed via a standard HTTP endpoint, allowing other systems to interact with it over the web.
+
+    For `platformchat` interfaces with `mode: polling`, the runtime fetches events from the platform; there is no inbound HTTP endpoint. `exposure` **MUST NOT** be set, and implementations **MUST** reject definitions that include it.
 
     **Default Paths:**
 
     - `webchat`: If no `exposure.http.path` is specified, implementations **SHOULD** default to `/chat`
     - `webhook`: If no `exposure.http.path` is specified, implementations **SHOULD** default to `/webhook`
+    - `platformchat`: If no `exposure.http.path` is specified, implementations **SHOULD** default to `/{platform}` (e.g., `/slack`, `/gchat`)
 
     AFM does not define the HTTP methods (GET, POST, etc.) for the agent's endpoint. This is left to the implementation to decide based on the agent's functionality and requirements.
 
@@ -512,6 +658,82 @@ interfaces:
     exposure:
       http:
         path: "/webhook-handler"
+```
+
+**Platformchat agent (Google Chat, request mode):**
+
+The platform delivers an interactive event over HTTP and expects the agent's reply in the response body.
+
+```yaml
+interfaces:
+  - type: platformchat
+    platform: gchat
+    mode: request
+    platform_config:
+      project_number: "${env:PROJECT_NO}"
+    signature:
+      output:
+        type: object
+        properties:
+          text:
+            type: string
+        required: [text]
+    exposure:
+      http:
+        path: "/gchat"
+```
+
+**Platformchat agent (Slack, notification mode):**
+
+Slack delivers events the runtime acknowledges; any user-visible reply happens out-of-band (e.g., via an MCP tool that posts back to Slack).
+
+```yaml
+interfaces:
+  - type: platformchat
+    platform: slack
+    mode: notification
+    prompt: |
+      Slack event:
+
+      ${http:payload.event}
+
+      Reply as a threaded message in channel ${http:payload.event.channel}, using
+      event.thread_ts as the parent timestamp when present and falling back to
+      event.ts only when there is no thread_ts.
+    platform_config:
+      signing_secret: "${env:SLACK_SIGNING_SECRET}"
+    exposure:
+      http:
+        path: "/slack"
+tools:
+  mcp:
+    - name: slack
+      transport:
+        type: http
+        url: "https://mcp.slack.com/mcp"
+        authentication:
+          type: bearer
+          token: "${env:SLACK_USER_TOKEN}"
+```
+
+**Platformchat agent (Telegram, polling mode):**
+
+The runtime polls Telegram's `getUpdates` API and invokes the agent for each new message.
+
+```yaml
+interfaces:
+  - type: platformchat
+    platform: telegram
+    mode: polling
+    polling:
+      interval: 30
+      timeout: 25
+    authentication:
+      type: api-key
+      api_key: "${env:TELEGRAM_BOT_TOKEN}"
+    platform_config:
+      allowed_updates:
+        - message
 ```
 
 ### 5.4. Tools {#54-tools}
@@ -823,8 +1045,8 @@ AFM files MAY use `${...}` syntax for variable substitution.
 This specification defines three standard variable prefixes:
 
 - The `env:` prefix (e.g., `${env:API_TOKEN}`) is **specification-defined** and MUST resolve to an environment variable, generally at agent load time (i.e., variable resolution for `env:` occurs before the agent is made available for use).
-- The `http:payload` prefix (e.g., `${http:payload.field}`) is **specification-defined** for webhook interfaces and MUST resolve to the corresponding field in the incoming webhook payload at runtime. Variable resolution for `http:payload` occurs at runtime for each webhook invocation.
-- The `http:header` prefix (e.g., `${http:header.User-Agent}`) is **specification-defined** for webhook interfaces and MUST resolve to the corresponding HTTP header value from the incoming webhook request at runtime. Header names are case-insensitive.
+- The `http:payload` prefix (e.g., `${http:payload.field}`) is **specification-defined** for `webhook` and `platformchat` interfaces and MUST resolve to the corresponding field in the event payload at runtime. For `webhook` and `platformchat` with `mode: notification` or `mode: request`, this is the body of the incoming HTTP request; for `platformchat` with `mode: polling`, this is the per-event body retrieved by the runtime from the platform's HTTP endpoint. Variable resolution for `http:payload` occurs at runtime for each invocation.
+- The `http:header` prefix (e.g., `${http:header.User-Agent}`) is **specification-defined** for `webhook` and `platformchat` interfaces and MUST resolve to the corresponding HTTP header value associated with the event at runtime — the incoming request headers for inbound modes, and the polling response headers for `platformchat` with `mode: polling`. Header names are case-insensitive.
 
 Implementations MAY define and support additional variable substitution conventions beyond those specified here. Common examples include `file:` and `secret:`, but these are **implementation-defined** and MAY vary between AFM implementations. The timing and semantics of resolution for these prefixes are determined by the implementation.
 
@@ -836,15 +1058,15 @@ The following table summarizes variable prefixes and their status:
 | Prefix | Context | Description | Example | Spec Status |
 | -------- | --------- | ------------- | --------- | ------------- |
 | `env:` | Static | Environment variable | `${env:API_TOKEN}` | **Spec-defined** |
-| `http:payload` | Runtime (webhook) | Access webhook payload fields | `${http:payload.event}` or `${http:payload['nested.field']}` | **Spec-defined** |
-| `http:header` | Runtime (webhook) | Access HTTP request headers | `${http:header.User-Agent}` or `${http:header.X-GitHub-Event}` | **Spec-defined** |
+| `http:payload` | Runtime | Access event payload fields for `webhook` and `platformchat` | `${http:payload.event}` or `${http:payload['nested.field']}` | **Spec-defined** |
+| `http:header` | Runtime | Access HTTP headers associated with the event for `webhook` and `platformchat` | `${http:header.User-Agent}` or `${http:header.X-GitHub-Event}` | **Spec-defined** |
 | `file:` | Static | Value from external config file | `${file:api.baseUrl}` | Implementation-defined |
 | `secret:` | Static | Value from secrets manager | `${secret:MODEL_API_KEY}` | Implementation-defined |
 
 **Static vs Runtime Resolution:**
 
 - **Static variables** (`env:`, `file:`, `secret:`): Resolved once when the agent is loaded or initialized
-- **Runtime variables** (`http:payload`, `http:header`): Resolved dynamically for each webhook invocation using request-specific data
+- **Runtime variables** (`http:payload`, `http:header`): Resolved dynamically for each `webhook` or `platformchat` invocation using event-specific data
 
 ### 7.2. Example Usage
 
@@ -863,7 +1085,7 @@ model:
     token: "${secret:MODEL_API_KEY}" # From secrets manager
 ```
 
-**Runtime variable substitution (webhook prompts):**
+**Runtime variable substitution (webhook / platformchat prompts):**
 
 ```yaml
 interfaces:
@@ -878,9 +1100,9 @@ interfaces:
       ${http:payload}
 ```
 
-### 7.3. Webhook Variable Access Patterns
+### 7.3. HTTP Variable Access Patterns
 
-When using `http:payload` and `http:header` in webhook prompts:
+When using `http:payload` and `http:header` in `webhook` or `platformchat` prompts:
 
 **Payload Field Access (Specification Requirements):**
 
