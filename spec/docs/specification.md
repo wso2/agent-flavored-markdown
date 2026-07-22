@@ -801,14 +801,37 @@ This section defines the generic client authentication schema that is used acros
 The authentication object is **OPTIONAL**.
 
 #### 5.6.1. Schema Overview
-
 ```yaml
 authentication:
-  type: string         # Authentication scheme (bearer, jwt, oauth2, api-key, basic, etc.)
-  # Additional fields depend on the type
-  # Examples:
-  # - For bearer: token
-  # - For basic: username, password
+  type: string                 # Scheme (bearer, basic, api-key, jwt, oauth2)
+  # For type: "bearer"
+  token: string                # The security token (usually environment variable)
+  # For type: "basic"
+  username: string             # The HTTP Basic username
+  password: string             # The HTTP Basic password
+  # For type: "api-key"
+  api_key: string              # The API key value
+  header_name: string          # Optional: The HTTP header name (defaults to "Authorization")
+  # For type: "jwt" (runtime-signed; for a pre-signed token use type: "bearer")
+  issuer: string               # The "iss" claim
+  audience: string             # The "aud" claim (string or list of strings)
+  signing_key: string          # PEM private key or symmetric secret used to sign the token
+  algorithm: string            # Optional: Signing algorithm (defaults to "RS256")
+  key_id: string               # Optional: The "kid" header
+  subject: string              # Optional: The "sub" claim
+  custom_claims: object        # Optional: Additional claims to embed in the token
+  expiry_seconds: integer      # Optional: Token validity period (defaults to 300)
+  # For type: "oauth2"
+  grant_type: string           # Flow: client_credentials, password, refresh_token, jwt_bearer
+  token_url: string            # Token endpoint (client_credentials, password, jwt_bearer)
+  refresh_url: string          # Refresh endpoint (refresh_token)
+  client_id: string            # Client identifier
+  client_secret: string        # Client secret
+  username: string             # Resource owner username (password grant)
+  password: string             # Resource owner password (password grant)
+  refresh_token: string        # The refresh token (refresh_token grant)
+  assertion: string            # The JWT assertion (jwt_bearer grant)
+  scopes: list[string]         # Optional: List of OAuth2 scopes to request
 ```
 
 #### 5.6.2. Field Definitions
@@ -816,9 +839,97 @@ authentication:
 <a id="authentication-object"></a>**Authentication Object:**
 
 | Key | Type | Required | Description |
-| ------ | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `type` | `string` | Yes | Authentication scheme (e.g., `bearer`, `basic`, `jwt`, `oauth2`).<br>Determines which additional fields are required or supported. |
-| `*` | Various | Varies | Additional fields are authentication-type specific. See examples below for common patterns.<br>Values **SHOULD** use [variable substitution](#7-variable-substitution) to reference credentials securely. |
+| :--- | :--- | :--- | :--- |
+| `type` | `string` | **Yes** | Authentication scheme. Case-insensitive. MUST be one of `bearer`, `basic`, `api-key`, `jwt`, or `oauth2`; any other value is invalid and MUST be rejected. Determines which additional type-specific fields are required or supported. |  
+
+##### Type-Specific Variant Fields:
+
+**Bearer Token Variant (`type: "bearer"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `token` | `string` | **Yes** | The active token string. Values **SHOULD** use [variable substitution](#7-variable-substitution) to reference credentials securely. |  
+
+
+**Basic Authentication Variant (`type: "basic"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `username` | `string` | **Yes** | The user ID string required for access. |
+| `password` | `string` | **Yes** | The plain text secret paired with the username. | 
+
+
+**API Key Variant (`type: "api-key"`)**
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `api_key` | `string` | **Yes** | The platform-specific authentication string. |
+|`header_name` |	`string` |	**No** |	The HTTP header name containing the API key. Defaults to "Authorization". |
+
+
+**JSON Web Token (JWT) Variant (`type: "jwt"`)**
+
+The `jwt` type denotes a token that the runtime signs dynamically from a key and claims. To supply an already-signed token, use the `bearer` type instead.
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `issuer` | `string` | **Yes** | The `iss` claim identifying the token issuer. |
+| `audience` | `string` or `string[]` | **Yes** | The `aud` claim identifying the intended recipient(s). |
+| `signing_key` | `string` | **Yes** | The private key (PEM format) or HMAC secret used to sign the token at runtime. |
+| `algorithm` | `string` | **No** | The cryptographic algorithm used for signing (e.g., "RS256", "HS256", "ES256"). Defaults to "RS256". |
+| `key_id` | `string` | **No** | The `kid` header identifying the signing key. |
+| `subject` | `string` | **No** | The `sub` claim identifying the token subject. |
+| `custom_claims` | `object` | **No** | Additional key-value claims to embed in the token. The runtime generates `iat` and `exp` claims dynamically. |
+| `expiry_seconds` | `integer` | **No** | The token validity duration in seconds. Defaults to 300. |  
+
+
+**OAuth 2.0 Variant (`type: "oauth2"`)**
+
+The `grant_type` field selects the OAuth 2.0 flow and determines which additional fields are required.
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `grant_type` | `string` | **Yes** | The OAuth 2.0 flow: `client_credentials`, `password`, `refresh_token`, or `jwt_bearer`. |
+| `scopes` | `string[]` | **No** | List of scopes to request. Applies to all grant types. |
+
+_Grant-specific fields:_
+
+`grant_type: "client_credentials"`
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `token_url` | `string` | **Yes** | The token endpoint where credentials are exchanged for an access token. |
+| `client_id` | `string` | **Yes** | The client ID. |
+| `client_secret` | `string` | **Yes** | The client secret. |
+
+`grant_type: "password"`
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `token_url` | `string` | **Yes** | The token endpoint. |
+| `username` | `string` | **Yes** | The resource owner username. |
+| `password` | `string` | **Yes** | The resource owner password. |
+| `client_id` | `string` | **Yes** | The client ID. |
+| `client_secret` | `string` | **Yes** | The client secret. |
+
+`grant_type: "refresh_token"`
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `refresh_url` | `string` | **Yes** | The endpoint used to redeem the refresh token. |
+| `refresh_token` | `string` | **Yes** | The refresh token. |
+| `client_id` | `string` | **Yes** | The client ID. |
+| `client_secret` | `string` | **Yes** | The client secret. |
+
+`grant_type: "jwt_bearer"`
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `token_url` | `string` | **Yes** | The token endpoint. |
+| `assertion` | `string` | **Yes** | The JWT assertion presented for the token exchange. |
+| `client_id` | `string` | **No** | The client ID. |
+| `client_secret` | `string` | **No** | The client secret. |
+
 
 <!-- !!! note "Authentication Field Structure"
     The authentication object uses a type-specific structure where the `type` field determines which additional fields are needed:
@@ -848,6 +959,31 @@ authentication:
   type: basic
   username: "${env:API_USERNAME}"
   password: "${env:API_PASSWORD}"
+
+# API key authentication
+authentication:
+  type: "api-key"
+  api_key: "${env:OPENAI_API_KEY}"
+  header_name: "X-API-Key"
+
+# JWT runtime-signed authentication
+authentication:
+  type: "jwt"
+  issuer: "my-issuer"
+  audience: "llm-api"
+  signing_key: "${env:MY_PRIVATE_KEY_PEM}"
+  algorithm: "RS256"
+  expiry_seconds: 300
+
+# OAuth2 Client Credentials authentication
+authentication:
+  type: "oauth2"
+  grant_type: client_credentials
+  token_url: "https://identity.enterprise.com/oauth/v2/token"
+  client_id: "${env:OAUTH_CLIENT_ID}"
+  client_secret: "${env:OAUTH_CLIENT_SECRET}"
+  scopes: ["llm:predict"]
+
 ```
 
 ### 5.7. Agent Skills {#57-agent-skills}
